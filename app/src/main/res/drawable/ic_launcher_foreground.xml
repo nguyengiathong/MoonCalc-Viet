@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crescent moon with two stars, drawn inside the 66dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#E9D9A6"
+        android:pathData="M48.55,33.26 A23.0,23.0 0 1,0 73.32,64.64 A20.0,20.0 0 0,1 48.55,33.26 Z" />
+    <path
+        android:fillColor="#C9B06B"
+        android:pathData="M73.50,31.00 Q74.60,35.90 79.50,37.00 Q74.60,38.10 73.50,43.00 Q72.40,38.10 67.50,37.00 Q72.40,35.90 73.50,31.00 Z" />
+    <path
+        android:fillColor="#C9B06B"
+        android:pathData="M80.00,48.80 Q80.60,51.40 83.20,52.00 Q80.60,52.60 80.00,55.20 Q79.40,52.60 76.80,52.00 Q79.40,51.40 80.00,48.80 Z" />
+</vector>

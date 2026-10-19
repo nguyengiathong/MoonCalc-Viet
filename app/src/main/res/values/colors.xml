@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same as the page background (var bg in assets/www/index.html), so nothing flashes before it paints. -->
+    <color name="night">#0D1119</color>
+    <color name="ic_launcher_background">#141A26</color>
+</resources>
