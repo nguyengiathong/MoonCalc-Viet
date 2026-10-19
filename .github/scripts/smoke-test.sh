@@ -34,4 +34,16 @@ grep -Eq 'Trăng (mới|lưỡi|khuyết|tròn)|huyền' "$out/ui.xml" || { echo
 grep -q '^E/MoonCalc' "$out/logcat.txt" && { echo "::error::JavaScript errors in console"; fail=1; }
 grep -q 'FATAL EXCEPTION' "$out/logcat.txt" && { echo "::error::App crashed"; fail=1; }
 adb shell pidof "$pkg" > /dev/null || { echo "::error::App is not running"; fail=1; }
+
+# Android 15+ draws every app edge to edge: the page must sit between the status bar and the
+# navigation bar, not under them.
+bounds=$(grep -o 'class="android.webkit.WebView"[^>]*bounds="[^"]*"' "$out/ui.xml" | head -1 | grep -o '\[[0-9,]*\]\[[0-9,]*\]' || true)
+screen_h=$(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1 | cut -dx -f2)
+echo "WebView bounds: ${bounds:-not found}, screen height: $screen_h"
+if [[ "$bounds" =~ ^\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]$ ]]; then
+  [ "${BASH_REMATCH[2]}" -gt 0 ] || { echo "::error::Page starts under the status bar"; fail=1; }
+  [ "${BASH_REMATCH[4]}" -lt "$screen_h" ] || { echo "::error::Page runs under the navigation bar"; fail=1; }
+else
+  echo "::error::WebView not found in the UI dump"; fail=1
+fi
 exit $fail
