@@ -34,9 +34,11 @@ Trang vẫn mở được trực tiếp trên trình duyệt: `app/src/main/asse
 
 Android chỉ cho cài bản mới đè lên bản cũ khi cả hai được ký cùng một khoá.
 
-- **Mặc định** (chưa cấu hình gì): APK được ký bằng khoá debug. Workflow lưu khoá này trong cache
-  của GitHub Actions, nhưng cache bị xoá nếu 7 ngày không có build nào. Khi đó bản mới sẽ không cài
-  đè được — gỡ ứng dụng cũ rồi cài lại (vị trí đã lưu sẽ mất).
+- **Mặc định** (chưa cấu hình gì): lần build đầu tiên, workflow tự tạo một khoá ký và cất trong
+  cache của GitHub Actions (không nằm trong repo); các lần sau dùng lại khoá đó. Cache bị GitHub xoá
+  nếu 7 ngày liền không có build nào, và mỗi nhánh chỉ thấy cache của chính nó cùng nhánh mặc định.
+  Khi khoá bị tạo mới, workflow ghi cảnh báo và bản mới không cài đè được: gỡ ứng dụng cũ rồi cài lại
+  (vị trí đã lưu sẽ mất). Mã SHA-256 của chứng chỉ ký hiện ở phần tóm tắt của mỗi lượt build.
 - **Khoá riêng, cố định** (nên làm): tạo khoá một lần và lưu vào GitHub Secrets.
 
   ```sh

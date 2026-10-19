@@ -27,31 +27,50 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Without a release key the APK is signed with the debug key; keeping that key between runs
-      # lets a newer APK install over an older one.
-      - name: Restore debug signing key
+      # Signing: the release key from secrets when configured (see README). Otherwise a key CI
+      # generates once (random password, stored next to it) and keeps in the Actions cache, so a
+      # newer APK still installs over an older one. GitHub drops a cache entry after 7 days without
+      # builds, and a branch only sees its own and the default branch's entries; then a new key is
+      # made and the app has to be reinstalled once.
+      - name: Restore CI signing key
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore
+          path: .ci-signing
+          key: mooncalc-ci-signing-key-v1
 
-      - name: Load release signing key
+      - name: Set up signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.MOONCALC_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MOONCALC_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOONCALC_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOONCALC_KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "MOONCALC_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            store="$RUNNER_TEMP/release.jks" storepw="$KEYSTORE_PASSWORD" keyalias="$KEY_ALIAS" keypw="$KEY_PASSWORD"
             echo "Signing with the release key from secrets."
           else
-            echo "::notice::No MOONCALC_KEYSTORE_BASE64 secret; signing with the debug key."
+            if [ ! -f .ci-signing/ci.jks ]; then
+              mkdir -p .ci-signing
+              openssl rand -hex 24 > .ci-signing/password
+              pw=$(cat .ci-signing/password)
+              keytool -genkeypair -keystore .ci-signing/ci.jks -storetype PKCS12 -alias mooncalc \
+                -keyalg RSA -keysize 2048 -validity 10000 -storepass "$pw" -keypass "$pw" -dname "CN=MoonCalc Viet CI"
+              echo "::warning::Generated a new CI signing key: uninstall builds signed with an older key before installing this one."
+            fi
+            store="$PWD/.ci-signing/ci.jks" storepw=$(cat .ci-signing/password) keyalias=mooncalc
+            keypw="$storepw"
+            echo "::add-mask::$storepw"
+            echo "::notice::No MOONCALC_KEYSTORE_BASE64 secret; signing with the CI key from the Actions cache."
           fi
+          {
+            echo "MOONCALC_KEYSTORE=$store"
+            echo "MOONCALC_KEYSTORE_PASSWORD=$storepw"
+            echo "MOONCALC_KEY_ALIAS=$keyalias"
+            echo "MOONCALC_KEY_PASSWORD=$keypw"
+          } >> "$GITHUB_ENV"
 
       - name: Build release APK
-        env:
-          MOONCALC_KEYSTORE_PASSWORD: ${{ secrets.MOONCALC_KEYSTORE_PASSWORD }}
-          MOONCALC_KEY_ALIAS: ${{ secrets.MOONCALC_KEY_ALIAS }}
-          MOONCALC_KEY_PASSWORD: ${{ secrets.MOONCALC_KEY_PASSWORD }}
         run: ./gradlew --no-daemon --stacktrace assembleRelease
 
       - name: Verify APK signature
@@ -64,6 +83,7 @@ jobs:
           {
             echo "### $(basename "$apk")"
             echo "Size: $(du -h "$apk" | cut -f1) · SHA-256: \`$(sha256sum "$apk" | cut -d' ' -f1)\`"
+            echo "Signing certificate SHA-256: \`$("$apksigner" verify --print-certs "$apk" | grep -m1 'certificate SHA-256 digest' | awk '{print $NF}')\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4

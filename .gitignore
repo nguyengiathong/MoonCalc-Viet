@@ -11,3 +11,4 @@ captures/
 *.jks
 *.keystore
 keystore.properties
+.ci-signing/
