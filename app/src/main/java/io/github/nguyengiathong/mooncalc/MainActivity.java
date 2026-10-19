@@ -1,18 +1,23 @@
 package io.github.nguyengiathong.mooncalc;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Insets;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.WindowInsets;
 import android.webkit.ConsoleMessage;
+import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -32,20 +37,30 @@ import java.io.InputStream;
  * The page is served from https://appassets.androidplatform.net/ (the host reserved for this by
  * WebView) rather than file://, so it runs in a secure context with its own origin for
  * localStorage. Nothing is fetched from the network.
+ *
+ * The page's navigator.geolocation works once the user grants the location permission, which is
+ * asked for the first time the page wants a position ("Định vị").
  */
 public class MainActivity extends Activity {
     private static final String TAG = "MoonCalc";
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START_URL = "https://" + HOST + "/index.html";
+    private static final int REQUEST_LOCATION = 1;
 
     private WebView web;
     private ClipboardManager clipboard;
+    private LocationManager locationManager;
+
+    // a geolocation request from the page, waiting for the user to answer the permission dialog
+    private String pendingGeoOrigin;
+    private GeolocationPermissions.Callback pendingGeoCallback;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         clipboard = getSystemService(ClipboardManager.class);
+        locationManager = getSystemService(LocationManager.class);
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(getColor(R.color.night));
@@ -63,6 +78,7 @@ public class MainActivity extends Activity {
         s.setAllowContentAccess(false);
         s.setSupportZoom(false);        // the map has its own pinch zoom
         s.setTextZoom(100);
+        s.setGeolocationEnabled(true);
 
         web.addJavascriptInterface(new Bridge(), "MoonCalcAndroid");
         web.setWebViewClient(new AssetClient());
@@ -73,8 +89,45 @@ public class MainActivity extends Activity {
                         TAG, m.message() + " (" + m.sourceId() + ":" + m.lineNumber() + ")");
                 return true;
             }
+
+            @Override
+            public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+                // retain=false: the page asks again next time, so revoking the permission takes effect
+                if (hasLocationPermission()) {
+                    callback.invoke(origin, true, false);
+                    return;
+                }
+                if (pendingGeoCallback != null) pendingGeoCallback.invoke(pendingGeoOrigin, false, false);
+                pendingGeoOrigin = origin;
+                pendingGeoCallback = callback;
+                // asking for both lets the user choose precise or approximate (Android 12+);
+                // approximate is plenty for the Moon
+                requestPermissions(new String[] {
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION }, REQUEST_LOCATION);
+            }
         });
         web.loadUrl(START_URL);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        if (requestCode != REQUEST_LOCATION || pendingGeoCallback == null) return;
+        pendingGeoCallback.invoke(pendingGeoOrigin, hasLocationPermission(), false);
+        pendingGeoCallback = null;
+        pendingGeoOrigin = null;
+    }
+
+    private boolean hasLocationPermission() {
+        return checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean isLocationEnabled() {
+        if (locationManager == null) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return locationManager.isLocationEnabled();
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
     }
 
     /**
@@ -173,6 +226,30 @@ public class MainActivity extends Activity {
             if (clipboard == null) return false;
             clipboard.setPrimaryClip(ClipData.newPlainText("MoonCalc", text));
             return true;
+        }
+
+        @JavascriptInterface
+        public boolean hasLocationPermission() {
+            return MainActivity.this.hasLocationPermission();
+        }
+
+        /** Whether the device's location setting is on at all. */
+        @JavascriptInterface
+        public boolean isLocationEnabled() {
+            return MainActivity.this.isLocationEnabled();
+        }
+
+        /** "location" opens the device's location settings, "app" this app's settings (permissions). */
+        @JavascriptInterface
+        public void openSettings(String which) {
+            Intent i = "location".equals(which)
+                    ? new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                    : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null));
+            try {
+                startActivity(i);
+            } catch (ActivityNotFoundException e) {
+                Log.w(TAG, "No settings screen for " + which);
+            }
         }
     }
 }

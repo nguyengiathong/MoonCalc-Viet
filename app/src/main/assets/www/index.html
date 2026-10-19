@@ -59,6 +59,16 @@ select { max-width: 220px; }
 .btn { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; line-height: 1.3; }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+/* place + time zone always share one row; lat/lon + locate button on the next */
+.ctrl-pair { display: flex; gap: 12px; min-width: 0; }
+.ll { flex-wrap: nowrap; }
+.locate { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.locate svg { width: 16px; height: 16px; flex: none; color: var(--accent); }
+.locate[aria-busy="true"] svg { animation: locate-pulse 1s ease-in-out infinite; }
+@keyframes locate-pulse { 50% { opacity: .25; } }
+.geo-msg { margin: 0; max-width: 360px; font-size: 12px; color: var(--set); }
+.geo-msg:empty { display: none; }
+.geo-msg .btn { margin-left: 6px; padding: 2px 8px; font-size: 12px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* time strip */
@@ -158,6 +168,13 @@ select { max-width: 220px; }
 .mk.up { background: var(--moon); } .mk.dn { background: var(--faint); } .mk.fall { background: var(--set); } .mk.rise { background: var(--rise); }
 @media (max-width: 1080px) { .main { grid-template-columns: 1fr; } .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); } }
 @media (max-width: 860px) { .lower, .bottom { grid-template-columns: 1fr; } .mapbox { min-height: 380px; } }
+@media (max-width: 640px) {
+  .top > .ctrl-pair, .top > .ctrl { flex: 1 1 100%; }
+  .ctrl-pair .ctrl { flex: 1 1 0; }
+  .ctrl-pair select { width: 100%; max-width: none; }
+  .ll input[type=number] { flex: 1 1 0; width: auto; }
+  .geo-msg { max-width: none; }
+}
 @media (max-width: 480px) { .moonhero { grid-template-columns: 100px 1fr; } #disc { width: 100px; height: 100px; }   .mapbox { min-height: 320px; } h1 { font-size: 22px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -172,20 +189,27 @@ select { max-width: 220px; }
       <h1>MoonCalc <i>Việt</i></h1>
       <p>Vị trí, pha, giờ mọc và lặn của Mặt Trăng cho bất kỳ nơi nào, bất kỳ lúc nào.</p>
     </div>
-    <div class="ctrl">
-      <label class="label" for="city">Địa điểm</label>
-      <select id="city"></select>
-    </div>
-    <div class="ctrl">
-      <span class="label">Vĩ độ · Kinh độ</span>
-      <div class="ctrl-row">
-        <input id="lat" type="number" step="0.0001" min="-90" max="90" aria-label="Vĩ độ">
-        <input id="lon" type="number" step="0.0001" min="-180" max="180" aria-label="Kinh độ">
+    <div class="ctrl-pair">
+      <div class="ctrl">
+        <label class="label" for="city">Địa điểm</label>
+        <select id="city"></select>
+      </div>
+      <div class="ctrl">
+        <label class="label" for="tz">Múi giờ</label>
+        <select id="tz"></select>
       </div>
     </div>
     <div class="ctrl">
-      <label class="label" for="tz">Múi giờ</label>
-      <select id="tz"></select>
+      <span class="label">Vĩ độ · Kinh độ</span>
+      <div class="ctrl-row ll">
+        <input id="lat" type="number" step="0.0001" min="-90" max="90" aria-label="Vĩ độ">
+        <input id="lon" type="number" step="0.0001" min="-180" max="180" aria-label="Kinh độ">
+        <button class="btn locate" id="locate" type="button" title="Lấy vị trí hiện tại của thiết bị">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span id="locateText">Định vị</span>
+        </button>
+      </div>
+      <p class="geo-msg" id="geoMsg" role="status"></p>
     </div>
   </header>
 
@@ -759,6 +783,7 @@ const DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const $ = id => document.getElementById(id);
 
 /* ---------- state ---------- */
+const GPS = -2;   // S.city for "the device's current position"; -1 is a custom point
 const S = { lat: 10.7769, lon: 106.7009, tz: 'Asia/Ho_Chi_Minh', city: 0, y: 2026, m: 1, d: 1, min: 0, live: true, calY: 0, calM: 0, playing: null, bandHalf: 2, bandHalf0: 2 };
 try { const s = JSON.parse(localStorage.getItem('mooncalc-vi') || 'null'); if (s && isFinite(s.lat) && isFinite(s.lon) && s.tz) Object.assign(S, { lat: s.lat, lon: s.lon, tz: s.tz, city: s.city }); } catch (e) {}
 function saveLoc() { try { localStorage.setItem('mooncalc-vi', JSON.stringify({ lat: S.lat, lon: S.lon, tz: S.tz, city: S.city })); } catch (e) {} }
@@ -1245,28 +1270,67 @@ function nearestCity(lat, lon) {
   CITIES.forEach((c, i) => { const d = Math.acos(Math.min(1, Math.sin(lat * DEG) * Math.sin(c[1] * DEG) + Math.cos(lat * DEG) * Math.cos(c[1] * DEG) * Math.cos((lon - c[2]) * DEG))) * 6371; if (d < bd) { bd = d; best = i; } });
   return [best, bd];
 }
-function ensureTzOption(tz) { const sel = $('tz'); if (![...sel.options].some(o => o.value === tz)) sel.add(new Option(tz, tz), 0); sel.value = tz; }
-function setLocation(lat, lon, cityIdx) {
+// "Asia/Ho_Chi_Minh" -> "Ho Chi Minh": short enough to sit next to the place picker on a phone
+const tzLabel = tz => tz.slice(tz.lastIndexOf('/') + 1).replace(/_/g, ' ');
+function ensureTzOption(tz) { const sel = $('tz'); if (![...sel.options].some(o => o.value === tz)) sel.add(new Option(tzLabel(tz), tz), 0); sel.value = tz; }
+// cityIdx: index into CITIES, null for a custom point, or GPS for the device's position (then tzHint is the device's zone)
+function setLocation(lat, lon, cityIdx, tzHint) {
   S.lat = Math.max(-89.99, Math.min(89.99, lat)); S.lon = ((lon + 540) % 360) - 180;
   let tz;
   if (cityIdx != null && cityIdx >= 0) { tz = CITIES[cityIdx][3]; S.city = cityIdx; }
   else {
-    const [i, d] = nearestCity(S.lat, S.lon); S.city = -1;
-    tz = d < 300 ? CITIES[i][3] : 'UTC' + (Math.round(S.lon / 15) >= 0 ? '+' : '') + Math.round(S.lon / 15);
+    const [i, d] = nearestCity(S.lat, S.lon); S.city = cityIdx === GPS ? GPS : -1;
+    tz = tzHint || (d < 300 ? CITIES[i][3] : 'UTC' + (Math.round(S.lon / 15) >= 0 ? '+' : '') + Math.round(S.lon / 15));
   }
-  $('city').value = String(S.city);
+  $('city').value = String(S.city); $('geoMsg').textContent = '';
   const keepMs = curMs(); S.tz = tz; ensureTzOption(tz);
   if (S.live) setNow(); else { const p = utcToLocalParts(S.tz, keepMs); S.y = p.y; S.m = p.m; S.d = p.d; S.min = p.min; S.calY = p.y; S.calM = p.m; }
   saveLoc(); render(true);
 }
+/* --- vị trí hiện tại của thiết bị --- */
+// the device's IANA zone, spelled as in CITIES when it is one of them (Chrome reports e.g. Asia/Saigon for Asia/Ho_Chi_Minh)
+function deviceTz() {
+  try {
+    const canon = z => new Intl.DateTimeFormat('en-US', { timeZone: z }).resolvedOptions().timeZone, dev = canon(undefined);
+    return CITIES.map(c => c[3]).find(z => canon(z) === dev) || dev;
+  } catch (e) { return null; }
+}
+const NATIVE = window.MoonCalcAndroid;   // present inside the Android app
+let locating = false;
+// quiet: refreshing a remembered "current position" at start-up, so no prompts or messages and the old point stays on failure
+function locate(quiet) {
+  const btn = $('locate'), msg = $('geoMsg');
+  const fail = (text, settings) => {
+    $('city').value = String(S.city); if (quiet) return;
+    msg.textContent = text;
+    if (settings && NATIVE) { const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Mở Cài đặt'; b.onclick = () => NATIVE.openSettings(settings); msg.append(b); }
+  };
+  if (locating) return;
+  if (!navigator.geolocation) return fail('Thiết bị này không hỗ trợ định vị.');
+  if (NATIVE && !NATIVE.isLocationEnabled()) return fail('Dịch vụ vị trí (GPS) của điện thoại đang tắt.', 'location');
+  if (quiet && NATIVE && !NATIVE.hasLocationPermission()) return;
+  locating = true; msg.textContent = ''; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); $('locateText').textContent = 'Đang định vị…';
+  const done = () => { locating = false; btn.disabled = false; btn.removeAttribute('aria-busy'); $('locateText').textContent = 'Định vị'; };
+  const ok = p => { done(); setLocation(p.coords.latitude, p.coords.longitude, GPS, deviceTz()); V.clon = S.lon; V.clat = S.lat; requestDraw('map'); };
+  const denied = () => { done(); fail('MoonCalc chưa được phép truy cập vị trí.', 'app'); };
+  // a coarse (network) fix is plenty for the Moon and arrives fastest; without one, wait for GPS
+  navigator.geolocation.getCurrentPosition(ok, e => {
+    if (e.code === e.PERMISSION_DENIED) return denied();
+    navigator.geolocation.getCurrentPosition(ok, e2 => {
+      if (e2.code === e2.PERMISSION_DENIED) return denied();
+      done(); fail('Chưa lấy được vị trí. Hãy thử lại ở nơi thoáng, gần cửa sổ hoặc ngoài trời.');
+    }, { enableHighAccuracy: true, timeout: 30000, maximumAge: 600000 });
+  }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
+}
 (function initControls() {
-  const cs = $('city'); cs.add(new Option('— Vị trí tuỳ chọn —', '-1'));
+  const cs = $('city'); cs.add(new Option('📍 Vị trí hiện tại', String(GPS))); cs.add(new Option('— Vị trí tuỳ chọn —', '-1'));
   const vn = document.createElement('optgroup'); vn.label = 'Việt Nam'; const wd = document.createElement('optgroup'); wd.label = 'Thế giới';
   CITIES.forEach((c, i) => (c[3] === 'Asia/Ho_Chi_Minh' ? vn : wd).append(new Option(c[0], String(i)))); cs.append(vn, wd);
-  cs.onchange = () => { const i = +cs.value; if (i >= 0) { setLocation(CITIES[i][1], CITIES[i][2], i); V.clon = S.lon; V.clat = S.lat; requestDraw('map'); } };
+  cs.onchange = () => { const i = +cs.value; if (i >= 0) { setLocation(CITIES[i][1], CITIES[i][2], i); V.clon = S.lon; V.clat = S.lat; requestDraw('map'); } else if (i === GPS) locate(false); };
+  $('locate').onclick = () => locate(false);
   const tz = $('tz'), seen = new Set();
   const g1 = document.createElement('optgroup'); g1.label = 'Theo thành phố';
-  CITIES.forEach(c => { if (!seen.has(c[3])) { seen.add(c[3]); g1.append(new Option(c[3].replace('_', ' '), c[3])); } });
+  CITIES.forEach(c => { if (!seen.has(c[3])) { seen.add(c[3]); g1.append(new Option(tzLabel(c[3]), c[3])); } });
   const g2 = document.createElement('optgroup'); g2.label = 'Giờ cố định';
   for (let o = -12; o <= 14; o++) g2.append(new Option(fmtOffset(o * 60), 'UTC' + (o >= 0 ? '+' : '') + o));
   tz.append(g1, g2);
@@ -1313,6 +1377,7 @@ let rsT = 0, rsW = 0; new ResizeObserver(en => { const wv = Math.round(en[0].con
 readColors(); ensureTzOption(S.tz); $('city').value = String(S.city ?? 0); setNow(); V.clon = S.lon;
 render(true);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render(true));
+if (S.city === GPS) locate(true);   // last time the user chose "current position": follow the device
 
 </script>
 

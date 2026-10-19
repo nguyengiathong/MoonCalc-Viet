@@ -2,7 +2,7 @@
 
 Vị trí, pha, giờ mọc và lặn của Mặt Trăng, kèm âm lịch Việt Nam. Ứng dụng bọc trang
 `MoonCalc-Viet.html` trong một WebView, chạy **hoàn toàn offline** (font chữ đóng gói sẵn, không xin
-quyền Internet). Yêu cầu Android 7.0 trở lên.
+quyền Internet). Quyền duy nhất là vị trí, chỉ hỏi khi bấm **Định vị**. Yêu cầu Android 7.0 trở lên.
 
 ## Tải và cài đặt
 
@@ -22,6 +22,11 @@ File APK của mỗi lần build cũng nằm trong mục *Artifacts* của lư�
 - Bản đồ: chụm/mở hai ngón để phóng to, thu nhỏ (bản gốc chỉ có cuộn chuột và nút +/−).
 - Nút "Sao chép bảng" dùng clipboard của Android.
 - Khi quay lại ứng dụng, đồng hồ cập nhật ngay về thời gian hiện tại.
+- **Định vị**: nút cạnh ô vĩ độ/kinh độ (hoặc mục "📍 Vị trí hiện tại" trong danh sách Địa điểm)
+  lấy vị trí của điện thoại; múi giờ lấy theo múi giờ của điện thoại. Vị trí gần đúng (approximate)
+  là đủ. Khi đã chọn chế độ này, mỗi lần mở app sẽ tự cập nhật lại vị trí. Nếu chưa cấp quyền hoặc
+  GPS đang tắt, trang hiện thông báo kèm nút "Mở Cài đặt".
+- Địa điểm và Múi giờ nằm cùng một hàng; múi giờ hiển thị gọn theo tên thành phố ("Ho Chi Minh").
 
 Trang vẫn mở được trực tiếp trên trình duyệt: `app/src/main/assets/www/index.html`.
 
@@ -70,7 +75,7 @@ file `.jks`), `MOONCALC_KEYSTORE_PASSWORD`, `MOONCALC_KEY_ALIAS`, `MOONCALC_KEY_
 | Đường dẫn | Nội dung |
 | --- | --- |
 | `app/src/main/assets/www/` | Trang MoonCalc (HTML + Astronomy Engine) và font |
-| `app/src/main/java/.../MainActivity.java` | WebView, phục vụ assets qua `https://appassets.androidplatform.net/`, cầu nối clipboard |
+| `app/src/main/java/.../MainActivity.java` | WebView, phục vụ assets qua `https://appassets.androidplatform.net/`, xin quyền vị trí, cầu nối clipboard / cài đặt |
 | `app/src/main/res/` | Icon, theme tối |
 | `.github/workflows/android.yml` | Build, ký, kiểm tra trên emulator, tạo release |
 
