@@ -2,7 +2,8 @@
 
 Vị trí, pha, giờ mọc và lặn của Mặt Trăng, kèm âm lịch Việt Nam. Ứng dụng bọc trang
 `MoonCalc-Viet.html` trong một WebView, chạy **hoàn toàn offline** (font chữ đóng gói sẵn, không xin
-quyền Internet). Quyền duy nhất là vị trí, chỉ hỏi khi bấm **Định vị**. Yêu cầu Android 7.0 trở lên.
+quyền Internet). Quyền vị trí chỉ được hỏi khi bấm **Định vị**, quyền thông báo khi bật thông báo
+đầu tiên. Yêu cầu Android 7.0 trở lên.
 
 ## Tải và cài đặt
 
@@ -27,6 +28,14 @@ File APK của mỗi lần build cũng nằm trong mục *Artifacts* của lư�
   là đủ. Khi đã chọn chế độ này, mỗi lần mở app sẽ tự cập nhật lại vị trí. Nếu chưa cấp quyền hoặc
   GPS đang tắt, trang hiện thông báo kèm nút "Mở Cài đặt".
 - Địa điểm và Múi giờ nằm cùng một hàng; múi giờ hiển thị gọn theo tên thành phố ("Ho Chi Minh").
+- "Quanh cao/thấp nhất" và "Quanh 0°" được lưu lại cho lần mở sau (cùng địa điểm, múi giờ, thông báo).
+- **Thông báo** (khung dưới bảng "Giờ Mặt Trăng theo độ cao"): với từng khoảng quanh mốc (quanh 0° lúc
+  mọc, quanh điểm cao nhất, quanh 0° lúc lặn, quanh điểm thấp nhất) có thể bật riêng thông báo lúc
+  bắt đầu và lúc kết thúc. Giờ cạnh mỗi ô là lần báo kế tiếp. Trang tính sẵn lịch 60 ngày tới theo vị
+  trí, múi giờ và độ rộng khoảng đang chọn, ứng dụng đặt báo thức chính xác để báo đúng giờ kể cả khi
+  đã đóng app hoặc khởi động lại máy. Lịch được tính lại mỗi lần mở app; nếu 58 ngày không mở, sẽ có
+  một thông báo nhắc mở app để gia hạn. Nút "Gửi thử thông báo" kiểm tra điện thoại có cho hiện
+  thông báo không. Một số máy (Xiaomi, Oppo, Vivo…) cần cho phép ứng dụng chạy nền / tắt tối ưu pin.
 
 Trang vẫn mở được trực tiếp trên trình duyệt: `app/src/main/assets/www/index.html`.
 
@@ -78,6 +87,7 @@ file `.jks`), `MOONCALC_KEYSTORE_PASSWORD`, `MOONCALC_KEY_ALIAS`, `MOONCALC_KEY_
 | --- | --- |
 | `app/src/main/assets/www/` | Trang MoonCalc (HTML + Astronomy Engine) và font |
 | `app/src/main/java/.../MainActivity.java` | WebView, phục vụ assets qua `https://appassets.androidplatform.net/`, xin quyền vị trí, cầu nối clipboard / cài đặt |
+| `app/src/main/java/.../MoonNotifier.java`, `AlarmReceiver.java` | Giữ lịch thông báo do trang tính, đặt báo thức chính xác, hiện thông báo, đặt lại sau khi khởi động máy |
 | `app/src/main/res/` | Icon, theme tối |
 | `.github/workflows/android.yml` | Build, ký, kiểm tra trên emulator, tạo release |
 

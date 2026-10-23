@@ -3,6 +3,7 @@ package io.github.nguyengiathong.mooncalc;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.NotificationManager;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -40,12 +41,15 @@ import java.io.InputStream;
  *
  * The page's navigator.geolocation works once the user grants the location permission, which is
  * asked for the first time the page wants a position ("Định vị").
+ *
+ * Notifications: the page computes when they are due and hands the list to {@link MoonNotifier}.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "MoonCalc";
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START_URL = "https://" + HOST + "/index.html";
     private static final int REQUEST_LOCATION = 1;
+    private static final int REQUEST_NOTIFICATIONS = 2;
 
     private WebView web;
     private ClipboardManager clipboard;
@@ -112,10 +116,21 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        if (requestCode == REQUEST_NOTIFICATIONS) {
+            web.evaluateJavascript("window.onNotifyPermission && onNotifyPermission()", null);
+            return;
+        }
         if (requestCode != REQUEST_LOCATION || pendingGeoCallback == null) return;
         pendingGeoCallback.invoke(pendingGeoOrigin, hasLocationPermission(), false);
         pendingGeoCallback = null;
         pendingGeoOrigin = null;
+    }
+
+    private boolean notificationsEnabled() {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null || !nm.areNotificationsEnabled()) return false;
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean hasLocationPermission() {
@@ -239,17 +254,55 @@ public class MainActivity extends Activity {
             return MainActivity.this.isLocationEnabled();
         }
 
-        /** "location" opens the device's location settings, "app" this app's settings (permissions). */
+        /**
+         * "location" opens the device's location settings, "notifications" this app's notification
+         * settings, "app" this app's settings (permissions).
+         */
         @JavascriptInterface
         public void openSettings(String which) {
-            Intent i = "location".equals(which)
-                    ? new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                    : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null));
+            Intent i;
+            if ("location".equals(which)) {
+                i = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+            } else if ("notifications".equals(which) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+            } else {
+                i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null));
+            }
             try {
                 startActivity(i);
             } catch (ActivityNotFoundException e) {
                 Log.w(TAG, "No settings screen for " + which);
             }
+        }
+
+        /** Whether Android lets the app show notifications at all (permission and app setting). */
+        @JavascriptInterface
+        public boolean notificationsEnabled() {
+            return MainActivity.this.notificationsEnabled();
+        }
+
+        /** Asks for the notification permission (Android 13+); the page hears back via onNotifyPermission(). */
+        @JavascriptInterface
+        public void requestNotifications() {
+            runOnUiThread(() -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, REQUEST_NOTIFICATIONS);
+                } else {
+                    web.evaluateJavascript("window.onNotifyPermission && onNotifyPermission()", null);
+                }
+            });
+        }
+
+        /** The page's notification schedule (JSON list of {t, id, title, body}); [] turns them off. */
+        @JavascriptInterface
+        public boolean setSchedule(String json) {
+            return MoonNotifier.setSchedule(getApplicationContext(), json);
+        }
+
+        @JavascriptInterface
+        public void testNotification() {
+            MoonNotifier.scheduleTest(getApplicationContext());
         }
     }
 }

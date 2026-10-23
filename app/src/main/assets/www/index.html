@@ -166,6 +166,23 @@ select { max-width: 220px; }
 .deg span { color: var(--muted); }
 .mk { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .mk.up { background: var(--moon); } .mk.dn { background: var(--faint); } .mk.fall { background: var(--set); } .mk.rise { background: var(--rise); }
+
+/* notifications */
+.notify-body { padding: 8px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.notify-grid { border-collapse: collapse; font-size: 13px; width: 100%; max-width: 620px; }
+.notify-grid th { text-align: left; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.notify-grid td { padding: 2px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.notify-grid td:first-child { padding-block: 8px; }
+.notify-grid .mk { margin-right: 6px; }
+.tog { display: inline-flex; align-items: center; gap: 8px; padding: 8px 0; cursor: pointer; }
+.tog input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); flex: none; }
+.tog small { font-family: var(--f-mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tog input:checked + small { color: var(--fg); }
+.notify-next { margin: 0; font-size: 13px; }
+.notify-next:empty { display: none; }
+.notify-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#notifyState.on { color: var(--accent); }
+@media (max-width: 480px) { .notify-grid td, .notify-grid th { padding-inline: 4px; } .tog { flex-direction: column; align-items: flex-start; gap: 4px; } }
 @media (max-width: 1080px) { .main { grid-template-columns: 1fr; } .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); } }
 @media (max-width: 860px) { .lower, .bottom { grid-template-columns: 1fr; } .mapbox { min-height: 380px; } }
 @media (max-width: 640px) {
@@ -310,6 +327,23 @@ select { max-width: 220px; }
     </div>
     <p class="band-note" id="bandNote"></p>
     <div class="band-one"><div class="tblwrap"><table id="tAll"></table></div></div>
+  </section>
+
+  <section class="card notify" aria-labelledby="notifyTitle">
+    <div class="card-h">
+      <h2 id="notifyTitle">Thông báo</h2>
+      <span class="label" id="notifyState">Đang tắt</span>
+    </div>
+    <p class="band-note" id="notifyNote"></p>
+    <div class="notify-body">
+      <table class="notify-grid">
+        <thead><tr><th>Khoảng quanh mốc</th><th>Lúc bắt đầu</th><th>Lúc kết thúc</th></tr></thead>
+        <tbody id="notifyRows"></tbody>
+      </table>
+      <p class="notify-next" id="notifyNext"></p>
+      <p class="geo-msg" id="notifyMsg" role="status"></p>
+      <div class="notify-actions"><button class="btn" id="notifyTest" type="button">Gửi thử thông báo</button></div>
+    </div>
   </section>
 
   <p class="foot">Tính toán theo thuật toán Astronomy Engine (độ chính xác cỡ ±1 phút). Giờ mọc/lặn tính cho mép trên đĩa trăng, có khúc xạ khí quyển, ở độ cao mặt biển. Âm lịch tính theo múi giờ UTC+7 với sóc và trung khí thực.</p>
@@ -784,9 +818,23 @@ const $ = id => document.getElementById(id);
 
 /* ---------- state ---------- */
 const GPS = -2;   // S.city for "the device's current position"; -1 is a custom point
-const S = { lat: 10.7769, lon: 106.7009, tz: 'Asia/Ho_Chi_Minh', city: 0, y: 2026, m: 1, d: 1, min: 0, live: true, calY: 0, calM: 0, playing: null, bandHalf: 2, bandHalf0: 2 };
-try { const s = JSON.parse(localStorage.getItem('mooncalc-vi') || 'null'); if (s && isFinite(s.lat) && isFinite(s.lon) && s.tz) Object.assign(S, { lat: s.lat, lon: s.lon, tz: s.tz, city: s.city }); } catch (e) {}
-function saveLoc() { try { localStorage.setItem('mooncalc-vi', JSON.stringify({ lat: S.lat, lon: S.lon, tz: S.tz, city: S.city })); } catch (e) {} }
+// the marks the band table is built around; S.notify[mark] = { s, e }: notify at the start / end of the window around it
+const MARKS = ['rise', 'top', 'set', 'bot'];
+const S = { lat: 10.7769, lon: 106.7009, tz: 'Asia/Ho_Chi_Minh', city: 0, y: 2026, m: 1, d: 1, min: 0, live: true, calY: 0, calM: 0, playing: null, bandHalf: 2, bandHalf0: 2, notify: {} };
+MARKS.forEach(k => S.notify[k] = { s: false, e: false });
+const halfOk = v => (isFinite(v) && v >= 0.25 && v <= 3) ? Math.round(v * 4) / 4 : null;
+try {
+  const s = JSON.parse(localStorage.getItem('mooncalc-vi') || 'null');
+  if (s && isFinite(s.lat) && isFinite(s.lon) && s.tz) Object.assign(S, { lat: s.lat, lon: s.lon, tz: s.tz, city: s.city });
+  if (s && halfOk(s.bandHalf)) S.bandHalf = halfOk(s.bandHalf);
+  if (s && halfOk(s.bandHalf0)) S.bandHalf0 = halfOk(s.bandHalf0);
+  if (s && s.notify) MARKS.forEach(k => { const n = s.notify[k]; if (n) S.notify[k] = { s: !!n.s, e: !!n.e }; });
+} catch (e) {}
+// everything the user sets is kept for the next launch, and the phone's notification schedule follows it
+function savePrefs() {
+  try { localStorage.setItem('mooncalc-vi', JSON.stringify({ lat: S.lat, lon: S.lon, tz: S.tz, city: S.city, bandHalf: S.bandHalf, bandHalf0: S.bandHalf0, notify: S.notify })); } catch (e) {}
+  scheduleNotifySync();
+}
 function setNow() {
   const p = utcToLocalParts(S.tz, Date.now());
   S.y = p.y; S.m = p.m; S.d = p.d; S.min = p.min + p.sec / 60; S.calY = p.y; S.calM = p.m;
@@ -1164,27 +1212,31 @@ function fillCal() {
 
 
 /* ---------- ±level windows over a month ---------- */
-function bandWindows(s, e, halfH, half0H) {
-  const obs = new A.Observer(S.lat, S.lon, 0), step = 5 * 60000, half = halfH * 3600000, half0 = half0H * 3600000;
+// marks in [t0, t1], sorted: the moon's centre crossing 0 deg going up (R, rise) or down (S, set),
+// and its upper (T) and lower (B) culminations. stepMin is the scan step for the 0 deg crossings.
+function moonMarks(t0, t1, stepMin) {
+  const obs = new A.Observer(S.lat, S.lon, 0), step = stepMin * 60000, ev = [];
   const alt = ms => altAz(A.Body.Moon, ms, obs)[0];
-  const t0 = s - 2 * DAY, t1 = e + 2 * DAY, ev = [];
-  // moments the moon's centre crosses 0 deg: R going up (rise), S going down (set)
   let pm = t0, pa = alt(t0);
   for (let ms = t0 + step; ms <= t1; ms += step) {
     const a = alt(ms);
     if (pa * a < 0) {
       let lo = pm, hi = ms, flo = pa;
       for (let k = 0; k < 20; k++) { const mid = (lo + hi) / 2, fm = alt(mid); if ((fm < 0) === (flo < 0)) { lo = mid; flo = fm; } else hi = mid; }
-      ev.push({ ms: (lo + hi) / 2, k: a > pa ? 'R' : 'S', h: half0 });
+      ev.push({ ms: (lo + hi) / 2, k: a > pa ? 'R' : 'S' });
     }
     pm = ms; pa = a;
   }
-  // upper (T) and lower (B) culminations
   for (const [ha, k] of [[0, 'T'], [12, 'B']]) {
     let t = A.MakeTime(new Date(t0));
-    for (;;) { const r = A.SearchHourAngle(A.Body.Moon, obs, ha, t); if (!r) break; const ms = r.time.date.getTime(); if (ms > t1) break; ev.push({ ms, k, h: half }); t = r.time.AddDays(0.5); }
+    for (;;) { const r = A.SearchHourAngle(A.Body.Moon, obs, ha, t); if (!r) break; const ms = r.time.date.getTime(); if (ms > t1) break; ev.push({ ms, k }); t = r.time.AddDays(0.5); }
   }
-  ev.sort((x, y) => x.ms - y.ms);
+  return ev.sort((x, y) => x.ms - y.ms);
+}
+function bandWindows(s, e, halfH, half0H) {
+  const obs = new A.Observer(S.lat, S.lon, 0), half = halfH * 3600000, half0 = half0H * 3600000;
+  const alt = ms => altAz(A.Body.Moon, ms, obs)[0];
+  const ev = moonMarks(s - 2 * DAY, e + 2 * DAY, 5).map(p => ({ ...p, h: p.k === 'R' || p.k === 'S' ? half0 : half }));
   const W = { top: [], bot: [], rise: [], set: [], upIn: [], upOut: [], dnIn: [], dnOut: [] };
   const core = { T: 'top', B: 'bot', R: 'rise', S: 'set' }, leg = { RT: 'upIn', TS: 'upOut', SB: 'dnIn', BR: 'dnOut' };
   ev.forEach((p, i) => {
@@ -1285,7 +1337,7 @@ function setLocation(lat, lon, cityIdx, tzHint) {
   $('city').value = String(S.city); $('geoMsg').textContent = '';
   const keepMs = curMs(); S.tz = tz; ensureTzOption(tz);
   if (S.live) setNow(); else { const p = utcToLocalParts(S.tz, keepMs); S.y = p.y; S.m = p.m; S.d = p.d; S.min = p.min; S.calY = p.y; S.calM = p.m; }
-  saveLoc(); render(true);
+  savePrefs(); render(true);
 }
 /* --- vị trí hiện tại của thiết bị --- */
 // the device's IANA zone, spelled as in CITIES when it is one of them (Chrome reports e.g. Asia/Saigon for Asia/Ho_Chi_Minh)
@@ -1296,6 +1348,11 @@ function deviceTz() {
   } catch (e) { return null; }
 }
 const NATIVE = window.MoonCalcAndroid;   // present inside the Android app
+// a button to the Android settings screen that fixes what a message is about ("app", "location", "notifications")
+function settingsButton(which) {
+  const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Mở Cài đặt';
+  b.onclick = () => NATIVE.openSettings(which); return b;
+}
 let locating = false;
 // quiet: refreshing a remembered "current position" at start-up, so no prompts or messages and the old point stays on failure
 function locate(quiet) {
@@ -1303,7 +1360,7 @@ function locate(quiet) {
   const fail = (text, settings) => {
     $('city').value = String(S.city); if (quiet) return;
     msg.textContent = text;
-    if (settings && NATIVE) { const b = document.createElement('button'); b.className = 'btn'; b.type = 'button'; b.textContent = 'Mở Cài đặt'; b.onclick = () => NATIVE.openSettings(settings); msg.append(b); }
+    if (settings && NATIVE) msg.append(settingsButton(settings));
   };
   if (locating) return;
   if (!navigator.geolocation) return fail('Thiết bị này không hỗ trợ định vị.');
@@ -1334,7 +1391,7 @@ function locate(quiet) {
   const g2 = document.createElement('optgroup'); g2.label = 'Giờ cố định';
   for (let o = -12; o <= 14; o++) g2.append(new Option(fmtOffset(o * 60), 'UTC' + (o >= 0 ? '+' : '') + o));
   tz.append(g1, g2);
-  tz.onchange = () => { const keep = curMs(); S.tz = tz.value; if (S.live) setNow(); else { const p = utcToLocalParts(S.tz, keep); Object.assign(S, { y: p.y, m: p.m, d: p.d, min: p.min, calY: p.y, calM: p.m }); } DAYC = null; CAL = null; PH = null; saveLoc(); render(true); };
+  tz.onchange = () => { const keep = curMs(); S.tz = tz.value; if (S.live) setNow(); else { const p = utcToLocalParts(S.tz, keep); Object.assign(S, { y: p.y, m: p.m, d: p.d, min: p.min, calY: p.y, calM: p.m }); } DAYC = null; CAL = null; PH = null; savePrefs(); render(true); };
   const onLL = () => { const la = parseFloat($('lat').value), lo = parseFloat($('lon').value); if (isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) { setLocation(la, lo, null); V.clon = S.lon; V.clat = S.lat; requestDraw('map'); } };
   $('lat').onchange = onLL; $('lon').onchange = onLL;
   $('date').onchange = () => { const v = $('date').value.split('-').map(Number); if (v.length === 3 && v[0]) { S.y = v[0]; S.m = v[1]; S.d = v[2]; S.calY = S.y; S.calM = S.m; S.live = false; render(true); } };
@@ -1346,7 +1403,7 @@ function locate(quiet) {
   $('nextMonth').onclick = () => { S.calM++; if (S.calM > 12) { S.calM = 1; S.calY++; } fillCal(); };
 })();
 (function initBand() {
-  const bind = (id, key) => { const inp = $(id); inp.value = S[key]; inp.onchange = () => { const v = Math.round(parseFloat(String(inp.value).replace(',', '.')) * 4) / 4; if (isFinite(v) && v >= 0.25 && v <= 3) { S[key] = v; fillBand(); } inp.value = S[key]; }; };
+  const bind = (id, key) => { const inp = $(id); inp.value = S[key]; inp.onchange = () => { const v = Math.round(parseFloat(String(inp.value).replace(',', '.')) * 4) / 4; if (isFinite(v) && v >= 0.25 && v <= 3) { S[key] = v; fillBand(); savePrefs(); } inp.value = S[key]; }; };
   bind('bandHalf', 'bandHalf'); bind('bandHalf0', 'bandHalf0');
   $('bandPrev').onclick = () => $('prevDay').click();
   $('bandNext').onclick = () => $('nextDay').click();
@@ -1367,6 +1424,101 @@ setInterval(() => { if (S.live && !S.playing) { setNow(); render(false); } else 
 // coming back to the app (or tab) should show the current time right away, not up to 30 s later
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.live && !S.playing) { setNow(); render(false); } });
 
+/* ---------- thông báo ---------- */
+// The page works out when each window around a mark starts and ends for the next NOTIFY_DAYS days and hands
+// that list to the Android app, which raises the notifications at those times even while it is closed.
+const NOTIFY_DAYS = 60, RENEW_ID = 9;
+const winHours = v => (+(2 * v).toFixed(2)).toString().replace('.', ',');
+// row: the window's name as in the band table; mk: its colour swatch there
+const MARK_INFO = {
+  rise: { mk: 'rise', name: 'trăng mọc', row: () => `${winHours(S.bandHalf0)} giờ quanh 0° lúc mọc` },
+  top: { mk: 'fall', name: 'trăng cao nhất', row: () => `${winHours(S.bandHalf)} giờ quanh điểm cao nhất` },
+  set: { mk: 'rise', name: 'trăng lặn', row: () => `${winHours(S.bandHalf0)} giờ quanh 0° lúc lặn` },
+  bot: { mk: 'up', name: 'trăng thấp nhất', row: () => `${winHours(S.bandHalf)} giờ quanh điểm thấp nhất` }
+};
+const placeName = () => S.city >= 0 ? CITIES[S.city][0] : S.lat.toFixed(3) + '°, ' + S.lon.toFixed(3) + '°';
+const fmtWhen = ms => { const p = utcToLocalParts(S.tz, ms); return fmtHM(S.tz, ms) + ' ' + pad2(p.d) + '/' + pad2(p.m); };
+const notifyCount = () => MARKS.reduce((n, k) => n + S.notify[k].s + S.notify[k].e, 0);
+
+// every start (e: 's') and end (e: 'e') of a window after `now`, with the notification text for it
+function notifyPlan(now, days) {
+  const half = S.bandHalf * 3600000, half0 = S.bandHalf0 * 3600000, obs = new A.Observer(S.lat, S.lon, 0);
+  const kind = { R: 'rise', T: 'top', S: 'set', B: 'bot' }, place = placeName(), out = [];
+  for (const p of moonMarks(now - 3 * 3600000, now + days * DAY, 10)) {
+    const k = kind[p.k], info = MARK_INFO[k], h = k === 'rise' || k === 'set' ? half0 : half, start = p.ms - h, end = p.ms + h;
+    if (end <= now) continue;
+    const at = k === 'top' || k === 'bot' ? altAz(A.Body.Moon, p.ms, obs)[0].toFixed(1) + '°' : '(0°)';
+    const body = `${info.name[0].toUpperCase() + info.name.slice(1)} ${at} lúc ${fmtHM(S.tz, p.ms)} · khoảng ${fmtHM(S.tz, start)}–${fmtHM(S.tz, end)} · ${place}`;
+    for (const [e, t] of [['s', start], ['e', end]]) if (t > now) out.push({ t: Math.round(t), k, e, title: (e === 's' ? 'Bắt đầu: ' : 'Kết thúc: ') + info.row(), body });
+  }
+  return out.sort((x, y) => x.t - y.t);
+}
+
+let notifyTimer = 0, notifyRefresh = 0, notifyAt = 0;
+function scheduleNotifySync(delay = 1000) { clearTimeout(notifyTimer); notifyTimer = setTimeout(syncNotify, delay); }
+function syncNotify() {
+  const now = Date.now(), on = notifyCount() > 0;
+  // with everything off, a few days are enough to show when each one would come
+  const plan = notifyPlan(now, on ? NOTIFY_DAYS : 3); notifyAt = now;
+  const events = plan.filter(x => S.notify[x.k][x.e]).map(x => ({ t: x.t, id: MARKS.indexOf(x.k) + 1, title: x.title, body: x.body }));
+  if (events.length) events.push({ t: now + (NOTIFY_DAYS - 2) * DAY, id: RENEW_ID, title: 'Lịch thông báo trăng sắp hết', body: 'Mở MoonCalc Việt để tính tiếp lịch thông báo cho những ngày tới.' });
+  events.sort((x, y) => x.t - y.t);
+  if (NATIVE) NATIVE.setSchedule(JSON.stringify(events));
+  // the times shown go stale once the first of them passes
+  clearTimeout(notifyRefresh);
+  if (plan.length) notifyRefresh = setTimeout(() => scheduleNotifySync(0), Math.min(plan[0].t - now + 1000, 2 ** 31 - 1));
+  fillNotify(plan, events);
+}
+function fillNotify(plan, events) {
+  const next = {}, rows = $('notifyRows');
+  for (const x of plan) if (!next[x.k + x.e]) next[x.k + x.e] = x.t;
+  MARKS.forEach(k => rows.querySelector(`[data-row="${k}"]`).textContent = MARK_INFO[k].row());
+  rows.querySelectorAll('[data-next]').forEach(el => { const t = next[el.dataset.next]; el.textContent = t ? fmtWhen(t) : '—'; });
+  const first = events.find(x => x.id !== RENEW_ID);
+  $('notifyNext').textContent = first ? `Thông báo tiếp theo: ${fmtWhen(first.t)} · ${first.title}` : '';
+  $('notifyNote').textContent = NATIVE
+    ? `Điện thoại sẽ báo khi bắt đầu hoặc kết thúc khoảng quanh mỗi mốc bạn chọn, tính cho ${placeName()} theo giờ ${fmtOffset(utcToLocalParts(S.tz, Date.now()).off)}. Giờ cạnh mỗi ô là lần báo kế tiếp. Lịch được tính trước ${NOTIFY_DAYS} ngày và cập nhật mỗi lần mở ứng dụng. Một số máy (Xiaomi, Oppo, Vivo…) cần cho phép MoonCalc chạy nền thì thông báo mới đến đúng giờ.`
+    : 'Thông báo chỉ hoạt động trong ứng dụng Android. Giờ cạnh mỗi ô là lần kế tiếp của khoảng đó.';
+  updateNotifyState();
+}
+// header state, and a warning when notifications are on but Android does not let the app show them
+function updateNotifyState(force) {
+  const n = notifyCount(), st = $('notifyState'), msg = $('notifyMsg');
+  st.textContent = n ? `Đang bật ${n} thông báo` : 'Đang tắt'; st.classList.toggle('on', n > 0);
+  msg.textContent = '';
+  if (!NATIVE || !(n || force) || NATIVE.notificationsEnabled()) return;
+  msg.textContent = 'MoonCalc chưa được phép hiện thông báo trên điện thoại này.';
+  msg.append(settingsButton('notifications'));
+}
+window.onNotifyPermission = () => updateNotifyState(true);   // called by the app after Android's permission dialog
+(function initNotify() {
+  const rows = $('notifyRows');
+  rows.innerHTML = MARKS.map(k => `<tr><td><i class="mk ${MARK_INFO[k].mk}"></i><span data-row="${k}"></span></td>` +
+    ['s', 'e'].map(e => `<td><label class="tog"><input type="checkbox" data-k="${k}" data-e="${e}"><small data-next="${k + e}">—</small></label></td>`).join('') + '</tr>').join('');
+  rows.querySelectorAll('input').forEach(cb => {
+    const k = cb.dataset.k, e = cb.dataset.e;
+    cb.checked = S.notify[k][e]; cb.disabled = !NATIVE;
+    cb.setAttribute('aria-label', `Báo lúc ${e === 's' ? 'bắt đầu' : 'kết thúc'} khoảng quanh ${MARK_INFO[k].name}`);
+    cb.onchange = () => {
+      S.notify[k][e] = cb.checked; savePrefs();
+      if (cb.checked && !NATIVE.notificationsEnabled()) NATIVE.requestNotifications();
+      updateNotifyState();
+    };
+  });
+  const test = $('notifyTest'); test.hidden = !NATIVE;
+  test.onclick = () => {
+    if (!NATIVE.notificationsEnabled()) NATIVE.requestNotifications();
+    NATIVE.testNotification(); updateNotifyState(true);
+    test.textContent = 'Đã hẹn, thông báo đến sau vài giây'; test.disabled = true;
+    setTimeout(() => { test.textContent = 'Gửi thử thông báo'; test.disabled = false; }, 6000);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    updateNotifyState();   // permission may have changed in Settings
+    if (Date.now() - notifyAt > 6 * 3600000) scheduleNotifySync(0);
+  });
+})();
+
 /* ---------- theme + resize ---------- */
 function rethink() { readColors(); CAL = null; PH = null; render(true); }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rethink);
@@ -1378,6 +1530,7 @@ readColors(); ensureTzOption(S.tz); $('city').value = String(S.city ?? 0); setNo
 render(true);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => render(true));
 if (S.city === GPS) locate(true);   // last time the user chose "current position": follow the device
+scheduleNotifySync(1500);   // refresh the phone's schedule from this launch on (and show the next times)
 
 </script>
 
