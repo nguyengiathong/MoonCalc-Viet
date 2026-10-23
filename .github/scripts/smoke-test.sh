@@ -30,19 +30,40 @@ tap() {
 bounds() {
   grep -oE "<node [^>]*($2)[^>]*>" "$out/$1" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' ' || true
 }
-# scroll_to <file> <regex>: swipe the page up until that node is fully on screen (dump left in <file>)
+# scroll_to <file> <regex>: page down until that node is fully on screen (dump left in <file>).
+# Page Down rather than a swipe: the map and charts take drags for themselves. If a key press did
+# not move anything, drag in the page's left margin instead.
 scroll_to() {
-  local b x1 y1 x2 y2
+  local b x1 y1 x2 y2 prev="" cur
   for attempt in $(seq 1 40); do
     dump "$1" || true
     b=$(bounds "$1" "$2")
     if [ -n "$b" ]; then
       read -r x1 y1 x2 y2 <<< "$b"
-      if [ "$y1" -gt 60 ] && [ "$y2" -lt $(( screen_h - 60 )) ] && [ "$y2" -gt "$y1" ]; then return 0; fi
+      if [ "$y1" -gt 30 ] && [ "$y2" -lt $(( screen_h - 30 )) ] && [ "$y2" -gt "$y1" ]; then return 0; fi
     fi
-    adb shell input swipe 160 $(( screen_h * 3 / 4 )) 160 $(( screen_h / 4 )) 400
+    cur=$(md5sum < "$out/$1" 2> /dev/null || true)
+    if [ "$cur" = "$prev" ]; then
+      adb shell input swipe 8 $(( screen_h * 3 / 4 )) 8 $(( screen_h / 4 )) 400
+    else
+      adb shell input keyevent KEYCODE_PAGE_DOWN
+    fi
+    prev=$cur
     sleep 1
   done
+  echo "--- last screen while looking for: $2 ---"
+  grep -oE '(text|content-desc|resource-id)="[^"]+"' "$out/$1" | head -25 || true
+  return 1
+}
+# wait_for <file> <regex> [seconds]: dump until a node matching the regex shows up (dialogs can be slow)
+wait_for() {
+  local end=$(( SECONDS + ${3:-30} ))
+  while [ $SECONDS -lt $end ]; do
+    dump "$1" && grep -qE "$2" "$out/$1" && return 0
+    sleep 2
+  done
+  echo "--- screen while waiting for: $2 ---"
+  grep -oE '(text|content-desc|resource-id)="[^"]+"' "$out/$1" | head -25 || true
   return 1
 }
 
@@ -79,9 +100,8 @@ fi
 # --- "Định vị": Android's permission dialog, then a position from the emulator's GPS (Hà Nội) ---
 adb shell cmd location set-location-enabled true || true
 if tap ui.xml 'text="Định vị"'; then
-  sleep 4
-  dump ui-permission.xml || true
-  if tap ui-permission.xml 'permission_allow_foreground_only_button|text="While using the app"'; then
+  allow='permission_allow_foreground_only_button|text="While using the app"'
+  if wait_for ui-permission.xml "$allow" && tap ui-permission.xml "$allow"; then
     located=""
     for attempt in $(seq 1 12); do
       adb emu geo fix 105.8542 21.0285 > /dev/null
@@ -96,7 +116,6 @@ if tap ui.xml 'text="Định vị"'; then
       || err "Location permission not granted after the dialog"
   else
     err "Location permission dialog did not appear"
-    grep -o 'text="[^"]\+"' "$out/ui-permission.xml" | head -20 || true
   fi
 else
   err "\"Định vị\" button not found"
@@ -105,9 +124,10 @@ fi
 # --- notifications: switch one on, allow them in Android's dialog, check the alarm, send a test ---
 if scroll_to ui-notify.xml 'Báo lúc bắt đầu khoảng quanh trăng cao nhất'; then
   tap ui-notify.xml 'Báo lúc bắt đầu khoảng quanh trăng cao nhất' || err "Could not tap the notification switch"
-  sleep 4
-  dump ui-notify-permission.xml || true
-  tap ui-notify-permission.xml 'permission_allow_button|text="Allow"' || err "Notification permission dialog did not appear"
+  allow='permission_allow_button|text="Allow"'
+  if wait_for ui-notify-permission.xml "$allow" && tap ui-notify-permission.xml "$allow"; then :; else
+    err "Notification permission dialog did not appear"
+  fi
   sleep 4
   adb shell dumpsys alarm > "$out/alarms.txt"
   echo "--- our alarm ---"
