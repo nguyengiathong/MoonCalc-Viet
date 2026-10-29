@@ -245,6 +245,23 @@ select { max-width: 220px; }
     <div class="slider-wrap"><canvas id="timeTrack" aria-label="Thanh thời gian trong ngày, kéo để đổi giờ" tabindex="0"></canvas></div>
   </section>
 
+  <section class="card band" aria-labelledby="bandTitle">
+    <div class="card-h">
+      <h2 id="bandTitle">Giờ Mặt Trăng theo độ cao trong ngày</h2>
+      <div class="ctrl-row">
+        <label class="label" for="bandHalf">Quanh cao/thấp nhất</label>
+        <div class="deg"><span>±</span><input id="bandHalf" type="number" min="0.25" max="3" step="0.25" value="2"><span>giờ</span></div>
+        <label class="label" for="bandHalf0">Quanh 0°</label>
+        <div class="deg"><span>±</span><input id="bandHalf0" type="number" min="0.25" max="3" step="0.25" value="2"><span>giờ</span></div>
+        <button class="btn" id="bandPrev" aria-label="Ngày trước">◀</button>
+        <span class="num" id="bandMonth"></span>
+        <button class="btn" id="bandNext" aria-label="Ngày sau">▶</button>
+        <button class="btn" id="bandCopy">Sao chép bảng</button>
+      </div>
+    </div>
+    <div class="band-one"><div class="tblwrap"><table id="tAll"></table></div></div>
+  </section>
+
   <div class="main">
     <section class="card">
       <div class="card-h">
@@ -310,24 +327,6 @@ select { max-width: 220px; }
       <div class="calwrap"><div class="cal" id="cal"></div></div>
     </section>
   </div>
-
-  <section class="card band" aria-labelledby="bandTitle">
-    <div class="card-h">
-      <h2 id="bandTitle">Giờ Mặt Trăng theo độ cao trong ngày</h2>
-      <div class="ctrl-row">
-        <label class="label" for="bandHalf">Quanh cao/thấp nhất</label>
-        <div class="deg"><span>±</span><input id="bandHalf" type="number" min="0.25" max="3" step="0.25" value="2"><span>giờ</span></div>
-        <label class="label" for="bandHalf0">Quanh 0°</label>
-        <div class="deg"><span>±</span><input id="bandHalf0" type="number" min="0.25" max="3" step="0.25" value="2"><span>giờ</span></div>
-        <button class="btn" id="bandPrev" aria-label="Ngày trước">◀</button>
-        <span class="num" id="bandMonth"></span>
-        <button class="btn" id="bandNext" aria-label="Ngày sau">▶</button>
-        <button class="btn" id="bandCopy">Sao chép bảng</button>
-      </div>
-    </div>
-    <p class="band-note" id="bandNote"></p>
-    <div class="band-one"><div class="tblwrap"><table id="tAll"></table></div></div>
-  </section>
 
   <section class="card notify" aria-labelledby="notifyTitle">
     <div class="card-h">
@@ -1272,8 +1271,6 @@ function fillBand() {
   const [s, e] = dayBounds(S.y, S.m, S.d);
   if (!BAND || BAND.key !== key) BAND = { key, w: bandWindows(s, e, hh, h0) };
   const now = Date.now(), rows = bandRows();
-  const city = S.city >= 0 ? CITIES[S.city][0] : S.lat.toFixed(3) + '°, ' + S.lon.toFixed(3) + '°';
-  $('bandNote').textContent = `Tại ${city}, giờ ${fmtOffset(utcToLocalParts(S.tz, s).off)}, ngày ${pad2(S.d)}/${pad2(S.m)}/${S.y}. Các khoảng xếp theo thứ tự thời gian. Số nhỏ cạnh mỗi giờ là độ cao của trăng lúc đó. Mốc 0° là lúc tâm Mặt Trăng ở đúng đường chân trời. Khoảng bắt đầu từ hôm trước giữ giờ bắt đầu của hôm trước, khoảng kết thúc sang hôm sau giữ giờ kết thúc của hôm sau (có ghi ngày). Độ cao âm là góc dưới đường chân trời. Ghi chú “đã qua” và “đang diễn ra” tính theo ngày giờ thật lúc này. Nhấp một dòng để chuyển tới lúc bắt đầu.`;
   const dur = ms => { const m = Math.round(ms / 60000); return Math.floor(m / 60) + ':' + pad2(m % 60); };
   const t = ms => { const a = utcToLocalParts(S.tz, ms), b = utcToLocalParts(S.tz, s); return fmtHM(S.tz, ms) + (a.d !== b.d ? ` <small>${pad2(a.d)}/${pad2(a.m)}</small>` : ''); };
   const dgs = v => v.toFixed(1) + '°';
